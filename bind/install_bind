@@ -1,0 +1,96 @@
+1. Останавливаем BIND, если запущен: 
+sudo service bind9
+status sudo service bind9 stop 
+
+2. В файле /etc/bind/named.conf.local укажем имя, тип зон, местоположение файлов:
+zone "iacur.local" in { 
+	type master;
+	file "db.iacur.local";
+};
+
+zone "56.168.192.in-addr.arpa" in {
+	type master;
+	file "db.192.168.56";
+
+// тут лежит список корневых серверов 
+zone "." in {
+	type hint;
+	file "db.cache";
+};
+
+3. Проверка синтаксиса: 
+named-checkconf 
+
+4. Копируем файлы зон: 
+# cp /etc/bind/db.local /var/cache/bind/ 
+# cp /etc/bind/db.127 /var/cache/bind/ 
+
+5. Переименовываем файлы зон для удобства: 
+# mv /var/cache/bind/db.local /var/cache/bind/db.iacur.local 
+# mv /var/cache/bind/db.127 /var/cache/bind/db.192.168.56 
+
+6. Редактируем файлы зон: 
+Содержимое db.iacur.local 
+
+: $TTL 3h 
+@ IN SOA astra-srv.iacur.local. root.iacur.local. 
+		( 1 ; Порядковый номер 
+		 3h ; Обновление через 3 часа
+		 1h ; Повторение попытки через 1 час
+		 1w ; Устаревание через 1 неделю
+		 1h ) ; Отрицательное TTL в 1 час 
+;
+; Серверы имен
+;
+@ IN NS astra-srv.iacur.local.
+
+;
+; Адреса для канонических имен
+; 
+
+astra-srv IN A 192.168.56.2
+astra-client IN A 192.168.56.101
+
+;
+; Псевдонимы
+;
+srv IN CNAME astra-srv.iacur.local.
+client IN CNAME astra-client.iacur.local.
+
+
+Содержимое db.192.168.56 :
+
+$ORIGIN 56.168.192.in-addr.arpa.
+$TTL 3h
+
+56.168.192.in-addr.arpa. IN SOA astra-srv.iacur.local. root.iacur.local.
+		( 2 ; Порядковый номер 
+		 3h ; Обновление через 3 часа
+		 1h ; Повторение попытки через 1 час
+		 1w ; Устаревание через 1 неделю 
+		 1h ) ; Отрицательное TTL в 1 час 
+;
+; Серверы имен
+;
+ IN NS astra-srv.iacur.local.
+;
+; Адреса, указывающие на канонические имена
+;
+2 IN PTR astra-srv.iacur.local.
+11 IN PTR astra-client.iacur.local.
+2 IN PTR iacur.local. 
+
+7. Проверяем конфигурационный файл и файлы зоны на ошибки:
+named-checkconf -z 
+
+8. Добавляем информацию о DNS сервере и домене в DHCP /etc/dhcp/dhcpd.conf, чтобы он ее раздавал клиентам:
+option domain-name "iacur.local";
+option domain-name-servers 192.168.56.2;
+
+8. Перезагружаем DHCP и DNS серверы:
+service isc-dhcp-server restart
+service bind9 restart 
+
+9. На клиенте проверяем работу DNS: 
+dig @localhost -x 192.168.56.11 
+ping astra-srv nslookup
